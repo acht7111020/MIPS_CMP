@@ -75,7 +75,7 @@ static struct PAGE_TABLE_ENTRY{
     int *valid;
 } I_PTE , D_PTE;
 
-static struct TLB{
+static struct TableLB{
     int *LRU_order;
     int *valid;
     int *content;
@@ -104,6 +104,7 @@ void D_CACHEupdate(int PA);
 int main(int argc , char *argv[]) {
     
     FILE * fw_ptr = fopen("snapshot.rpt", "w");
+    FILE * fw_rep = fopen("report.rpt","w");
     
     ReadFile();
     
@@ -125,6 +126,7 @@ int main(int argc , char *argv[]) {
     
     LoadInMem();
     AllocateMemory(argc, argv);
+    
     while (1) {
         //printf("begin while.\n");
         op = rs = rt = rd = shamt = funct = imm = address = 0;
@@ -155,9 +157,32 @@ int main(int argc , char *argv[]) {
             break;
         }
         
+        
     }
-    fclose(fw_ptr);
     
+    //printf("finish while loop \n");
+    fprintf( fw_rep, "ICache :\n");
+    fprintf( fw_rep, "# hits: %u\n", ICache_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", ICache_misses);
+    fprintf( fw_rep, "DCache :\n");
+    fprintf( fw_rep, "# hits: %u\n", DCache_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", DCache_misses );
+    fprintf( fw_rep, "ITLB :\n");
+    fprintf( fw_rep, "# hits: %u\n", ITLB_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", ITLB_misses );
+    fprintf( fw_rep, "DTLB :\n");
+    fprintf( fw_rep, "# hits: %u\n", DTLB_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", DTLB_misses );
+    fprintf( fw_rep, "IPageTable :\n");
+    fprintf( fw_rep, "# hits: %u\n", IPTE_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", IPTE_misses);
+    fprintf( fw_rep, "DPageTable :\n");
+    fprintf( fw_rep, "# hits: %u\n", DPTE_hits );
+    fprintf( fw_rep, "# misses: %u\n\n", DPTE_misses );
+    
+    
+    fclose(fw_ptr);
+    fclose(fw_rep);
     
     return 0;
 }
@@ -287,7 +312,7 @@ void decode(int instruction_code){
     op = (instruction_code >> 26) & 0x3f;
     
     if(op == 0x3F){
-        exit(0);
+        return;
     }
     
     PC = PC + 4 ; /*在執行這行的時候 ＰＣ已經跳到下一個 */
@@ -652,11 +677,11 @@ void ErrorDetect(int err){
             break;
         case 3:
             fprintf( fw_err , "In cycle %d: Address Overflow\n", cycle_count);
-            HaltFlag = 1;
+            //HaltFlag = 1;
             break;
         case 4:
             fprintf( fw_err , "In cycle %d: Misalignment Error\n", cycle_count);
-            HaltFlag = 1;
+            //HaltFlag = 1;
             break;
         default:
             break;
@@ -732,6 +757,7 @@ void AllocateMemory(int argc , char *argv[]){
     I_TLB.LRU_order = (int*)calloc(I_TLB_entries, sizeof(int));
     I_TLB.tag = (int*)calloc(I_TLB_entries, sizeof(int));
     I_TLB.valid = (int*)calloc(I_TLB_entries, sizeof(int));
+    
     D_TLB.content = (int*)calloc(D_TLB_entries, sizeof(int));
     D_TLB.LRU_order = (int*)calloc(D_TLB_entries, sizeof(int));
     D_TLB.tag = (int*)calloc(D_TLB_entries, sizeof(int));
@@ -743,6 +769,7 @@ void AllocateMemory(int argc , char *argv[]){
         printf("Cannot allocate dynamic memory\n");
         exit(3);
     }
+   
     
     for (i = 0; i < I_CACHE_block_num; i++) {
         I_CACHE.LRU_order[i] = -1 ;
@@ -773,13 +800,15 @@ void AllocateMemory(int argc , char *argv[]){
     for (i = 0; i < I_TLB_entries; i++) {
         I_TLB.LRU_order[i] = -1;
         I_TLB.content[i] = -1;
-        I_PTE.valid[i] = 0;
+        I_TLB.valid[i] = 0;
+        //printf("I_TLB : %d \n",I_TLB.valid[i]);
     }
     for (i = 0; i < D_TLB_entries; i++) {
         D_TLB.LRU_order[i] = -1;
         D_TLB.content[i] = -1;
         D_TLB.valid[i] = 0;
     }
+    printf("finish allocate.\n");
 
 }
 
@@ -808,21 +837,20 @@ int LRUupdate(int* LRUorder , int entries , int init_value , int replace_new){
 
 void I_TLBupdate(int VA){
     int i ;
-    
+   
     for (i = 0; i < I_TLB_entries; i++) {
-        if (I_TLB.valid[i] == 1) {
-            if (I_TLB.tag[i] == VA / I_pagesize) {
-                
-                /* TLB hit */
-                ITLB_hits ++ ;
-                
-                /* LRU update (must in LRU order because of hitting)*/
-                LRUupdate(I_TLB.LRU_order ,I_TLB_entries , 0 , i );
-                
-                /* CACHE lookup */  //PA
-                I_CACHEupdate( I_TLB.content[i] + (VA % I_pagesize) );
-                return;
-            }
+        if (I_TLB.valid[i] == 1 && (I_TLB.tag[i] == (VA / I_pagesize) )) {
+            
+            /* TLB hit */
+            ITLB_hits ++ ;
+            
+            /* LRU update (must in LRU order because of hitting)*/
+            LRUupdate(I_TLB.LRU_order ,I_TLB_entries , 0 , i );
+            
+            /* CACHE lookup */  //PA
+            I_CACHEupdate( I_TLB.content[i] + (VA % I_pagesize) );
+            return;
+        
         }
     }
     
@@ -832,6 +860,7 @@ void I_TLBupdate(int VA){
     /* Look up in I PTE */      //被取代掉的，需從valid -> invalid ( page fault )
     int I_PTElookup_result ;
     I_PTElookup_result = I_PTEupdate(VA);
+    printf("***I_PTElookup_result = %d\n",I_PTElookup_result);
     
     /* Update I_TLB */
     
@@ -859,10 +888,10 @@ void I_TLBupdate(int VA){
             
             /* before return , change to invalid if PTE page fault */
             if (I_PTElookup_result != -1) {
-                for (i = 0 ; i < I_TLB_entries ; i++) {
-                    if ( I_TLB.tag[i] == I_PTElookup_result ) {
-                        I_TLB.tag [i] = -1;
-                        I_TLB.valid = 0;
+                for (j = 0 ; j < I_TLB_entries ; j++) {
+                    if ( I_TLB.tag[j] == I_PTElookup_result ) {
+                        I_TLB.tag [j] = -1;
+                        I_TLB.valid[j] = 0;
                     }
                 }
             }
@@ -885,12 +914,13 @@ void I_TLBupdate(int VA){
     /* LRU update ??? */ //從no.0 開始取代
     LRUupdate(I_TLB.LRU_order, I_TLB_entries, 0, replace_index);
     
+    
     /* before return , change to invalid if PTE page fault */
     if (I_PTElookup_result != -1) {
         for (i = 0 ; i < I_TLB_entries ; i++) {
             if ( I_TLB.tag[i] == I_PTElookup_result ) {
                 I_TLB.tag [i] = -1;
-                I_TLB.valid = 0;
+                I_TLB.valid[i] = 0;
             }
         }
     }
@@ -909,7 +939,8 @@ void I_TLBupdate(int VA){
 int I_PTEupdate(int VA){
     int i , j , k ,I_MEMlookup_result = -1;
     int words = I_pagesize / sizeof(int);
-    
+    /*for(i = 0; i < I_PTE_entries; i++)
+        printf("I_PTE.valid[%d] = %d, I_PTE.content[%d] = %d\n", i, I_PTE.valid[i], i, I_PTE.content[i]);*/
     /* I_PTE hit */
     if (I_PTE.valid[VA / I_pagesize] == 1) {
         IPTE_hits ++ ;
@@ -965,17 +996,21 @@ int I_PTEupdate(int VA){
     
     /* check if MEM 被替換掉的 page exist in PTE (the same page) */
     for (i = 0 ; i < I_PTE_entries ; i++ ) {
-        if (i != VA / I_pagesize && ( (I_PTE.content[i] / I_pagesize) == ( I_MEMlookup_result / I_pagesize ) ) ) {
+        if (i != (VA / I_pagesize) && ( (I_PTE.content[i] / I_pagesize) == ( I_MEMlookup_result / I_pagesize ) ) && I_PTE.content[i]!= -1) {
             I_PTE.content[i] = -1 ;
             I_PTE.valid[i] = 0;
+            printf("look up result = %d \n",I_MEMlookup_result);
             
-            for (j = 0 ; j < I_CACHE_block_num ; i++) {
+            for (j = 0 ; j < I_CACHE_block_num ; j++) {
+                printf("%d \n",(I_CACHE.tag[j]*I_blocksize /I_pagesize));
                 if (I_CACHE.valid[j] == 1 && I_CACHE.tag[j] != -1 &&
                     (I_CACHE.tag[j] * I_blocksize / I_pagesize ) == I_MEMlookup_result / I_pagesize ) {
                     I_CACHE.valid[j] = 0 ;
                     I_CACHE.tag[j] = -1 ;
+                    printf("invalid in cycle_count : %d , tag = %d\n",cycle_count , I_CACHE.tag[j]);
                 }
             }
+            printf("should be invalid in cycle_count : %d , tag = %d \n\n\n",cycle_count,I_MEMlookup_result / I_pagesize);
             return i ;
         }
     }
@@ -989,14 +1024,15 @@ int I_PTEupdate(int VA){
 
 void I_CACHEupdate(int PA){
     int i , j , k , replace_index = -1 ;
-    //int MEM_index = PA / I_blocksize;
+    int MEM_index = (PA / I_blocksize);
     int words = I_blocksize / sizeof(int);
+    int n_ways_set = 2;
     
     for (i = 0 ; i < I_CACHE_block_num ; i++) {
-        if (I_CACHE.valid[i] == 1 && ( I_CACHE.tag[i] == (PA / I_blocksize ) ) ) {
+        if (I_CACHE.valid[i] == 1 && ( I_CACHE.tag[i] == MEM_index  ) ) {
             /* I_CACHE hit */
             ICache_hits ++ ;
-            
+            printf("hit in cycle_count : %d , tag = %d\n",cycle_count , I_CACHE.tag[i]);
             /* LRU order */
             //fully associativity
             if (I_associativity == I_CACHE_block_num) {
@@ -1010,6 +1046,11 @@ void I_CACHEupdate(int PA){
             else{
                 LRUupdate( I_CACHE.LRU_order , (i /I_associativity)*I_associativity + I_associativity ,
                           (i /I_associativity)*I_associativity , i );
+            }
+            printf("addr = %d, memindex = %d, which_set = %d, PC = %d, cycle = %d\n", PA, MEM_index , n_ways_set , PC, cycle_count);
+            for(i = 0; i < I_CACHE_block_num; i++){
+                printf("I_CACHE.valid[%d] = %d, I_CACHE.tag[%d] = %d, I_CACHE.LRUorder[%d] = %d\n",
+                       i, I_CACHE.valid[i], i, I_CACHE.tag[i], i,I_CACHE.LRU_order[i]);
             }
             return ;
         }
@@ -1035,8 +1076,8 @@ void I_CACHEupdate(int PA){
                 /* if "i" not in LRU order */
                 if (j == I_CACHE_block_num){
                     for(j = 0; j < I_CACHE_block_num; j++){
-                        if (I_MEM.LRU_order[j] == -1){
-                            I_MEM.LRU_order[j] = i;
+                        if (I_CACHE.LRU_order[j] == -1){
+                            I_CACHE.LRU_order[j] = i;
                             break;
                         }
                     }
@@ -1075,16 +1116,57 @@ void I_CACHEupdate(int PA){
     }
     // n - ways
     else{
-        LRUupdate( I_CACHE.LRU_order , (i /I_associativity)*I_associativity + I_associativity ,
-                  (i /I_associativity)*I_associativity , i );
+        //n_way_set = (Block number) modulo (#Sets in cache)
+        n_ways_set = (PA / I_blocksize) % (I_CACHE_block_num / I_associativity);
+        
+        for ( i =  n_ways_set * I_associativity ; i < n_ways_set * I_associativity + I_associativity ; i ++ ) {
+            if (I_CACHE.valid[i] == 0) {
+                I_CACHE.tag[i] = PA / I_blocksize;
+                I_CACHE.valid[i] = 1 ;
+                
+                /* CACHE data replace */ //一次搬一整個page in cache
+                for (j = PA / sizeof(int) , k = i * words; j < PA / sizeof(int) + words; j++ , k++) {
+                    I_CACHE.data[k] = i_disk[j] ;
+                }
+                
+                /* LRU update ???*/
+                j = LRUupdate( I_CACHE.LRU_order , n_ways_set * I_associativity + I_associativity ,
+                          n_ways_set * I_associativity , i );
+                
+                /* if "i" not in LRU order */
+                if (j == n_ways_set * I_associativity + I_associativity){
+                    for(j =  n_ways_set * I_associativity ; j < n_ways_set * I_associativity + I_associativity ; j++){
+                        if (I_CACHE.LRU_order[j] == -1){
+                            I_CACHE.LRU_order[j] = i;
+                            break;
+                        }
+                    }
+                }
+                break;
+                
+            }
+        }
+        
+        /** if non invalid entry in mem
+         replace in LRE order */
+        if (i == n_ways_set * I_associativity + I_associativity ) {
+            replace_index = I_CACHE.LRU_order[0];
+            I_CACHE.tag[replace_index] = PA / I_blocksize ;
+            
+            /* CACHE data replace */ //一次搬一整個page in cache
+            for (j = PA / sizeof(int) , k = replace_index * words; j < PA / sizeof(int) + words; j++ , k++) {
+                I_CACHE.data[k] = i_disk[j] ;
+            }
+            
+            /* LRU update ???*/
+            LRUupdate( I_CACHE.LRU_order , n_ways_set * I_associativity + I_associativity ,
+                      n_ways_set * I_associativity , replace_index );
+        }
     }
-
-
-
-
-
-
-
-
+    printf("addr = %d, memindex = %d, which_set = %d, PC = %d, cycle = %d\n", PA, MEM_index , n_ways_set , PC, cycle_count);
+    for(i = 0; i < I_CACHE_block_num; i++){
+        printf("I_CACHE.valid[%d] = %d, I_CACHE.tag[%d] = %d, I_CACHE.LRUorder[%d] = %d\n",
+               i, I_CACHE.valid[i], i, I_CACHE.tag[i], i,I_CACHE.LRU_order[i]);
+    }
 
 }
