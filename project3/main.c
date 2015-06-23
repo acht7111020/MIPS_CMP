@@ -866,6 +866,16 @@ void I_TLBupdate(int VA){
     I_PTElookup_result = I_PTEupdate(VA);
     //printf("***I_PTElookup_result = %d\n",I_PTElookup_result);
     
+    /* before return , change to invalid if PTE page fault */
+    if (I_PTElookup_result != -1) {
+        for (i = 0 ; i < I_TLB_entries ; i++) {
+            if ( I_TLB.index[i] == I_PTElookup_result ) {
+                I_TLB.index [i] = -1;
+                I_TLB.valid[i] = 0;
+            }
+        }
+    }
+    
     /* Update I_TLB */
     
     /** first : find invalid entry*/
@@ -891,14 +901,14 @@ void I_TLBupdate(int VA){
             }
             
             /* before return , change to invalid if PTE page fault */
-            if (I_PTElookup_result != -1) {
+            /*if (I_PTElookup_result != -1) {
                 for (j = 0 ; j < I_TLB_entries ; j++) {
                     if ( I_TLB.index[j] == I_PTElookup_result ) {
                         I_TLB.index [j] = -1;
                         I_TLB.valid[j] = 0;
                     }
                 }
-            }
+            }*/
             
             /* CACHE lookup */  //PA
             I_CACHEupdate( I_TLB.content[i] + (VA % I_pagesize) );
@@ -919,15 +929,7 @@ void I_TLBupdate(int VA){
     LRUupdate(I_TLB.LRU_order, I_TLB_entries, 0, replace_index);
     
     
-    /* before return , change to invalid if PTE page fault */
-    if (I_PTElookup_result != -1) {
-        for (i = 0 ; i < I_TLB_entries ; i++) {
-            if ( I_TLB.index[i] == I_PTElookup_result ) {
-                I_TLB.index [i] = -1;
-                I_TLB.valid[i] = 0;
-            }
-        }
-    }
+    
     
     /* CACHE lookup */  //PA
     I_CACHEupdate( I_TLB.content[replace_index] + (VA % I_pagesize) );
@@ -1187,13 +1189,13 @@ void I_CACHEupdate(int PA){
 
 void D_TLBupdate(int VA){
     int i ;
-    
+    printf("\n\nVadd = %d in cycle %d\n",VA,cycle_count);
     for (i = 0; i < D_TLB_entries; i++) {
         if (D_TLB.valid[i] == 1 && (D_TLB.index[i] == (VA / D_pagesize) )) {
             
             /* TLB hit */
             DTLB_hits ++ ;
-            
+             printf("Dtlb hit in cycle %d\n",cycle_count);
             /* LRU update (must in LRU order because of hitting)*/
             LRUupdate(D_TLB.LRU_order ,D_TLB_entries , 0 , i );
             
@@ -1206,11 +1208,21 @@ void D_TLBupdate(int VA){
     
     /* D_TLB miss */
     DTLB_misses ++ ;
-    
+    printf("Dtlb miss in cycle %d\n",cycle_count);
     /* Look up in I PTE */      //被取代掉的，需從valid -> invalid ( page fault )
     int D_PTElookup_result ;
     D_PTElookup_result = D_PTEupdate(VA);
     //printf("***D_PTElookup_result = %d\n",D_PTElookup_result);
+    
+    /* before return , change to invalid if PTE page fault */
+    if (D_PTElookup_result != -1) {
+        for (i = 0 ; i < D_TLB_entries ; i++) {
+            if ( D_TLB.index[i] == D_PTElookup_result ) {
+                D_TLB.index [i] = -1;
+                D_TLB.valid[i] = 0;
+            }
+        }
+    }
     
     /* Update D_TLB */
     
@@ -1237,14 +1249,14 @@ void D_TLBupdate(int VA){
             }
             
             /* before return , change to invalid if PTE page fault */
-            if (D_PTElookup_result != -1) {
+            /*if (D_PTElookup_result != -1) {
                 for (j = 0 ; j < D_TLB_entries ; j++) {
                     if ( D_TLB.index[j] == D_PTElookup_result ) {
                         D_TLB.index [j] = -1;
                         D_TLB.valid[j] = 0;
                     }
                 }
-            }
+            }*/
             
             /* CACHE lookup */  //PA
             D_CACHEupdate( D_TLB.content[i] + (VA % D_pagesize) );
@@ -1265,15 +1277,7 @@ void D_TLBupdate(int VA){
     LRUupdate(D_TLB.LRU_order, D_TLB_entries, 0, replace_index);
     
     
-    /* before return , change to invalid if PTE page fault */
-    if (D_PTElookup_result != -1) {
-        for (i = 0 ; i < D_TLB_entries ; i++) {
-            if ( D_TLB.index[i] == D_PTElookup_result ) {
-                D_TLB.index [i] = -1;
-                D_TLB.valid[i] = 0;
-            }
-        }
-    }
+   
     
     /* CACHE lookup */  //PA
     D_CACHEupdate( D_TLB.content[replace_index] + (VA % D_pagesize) );
@@ -1294,11 +1298,13 @@ int D_PTEupdate(int VA){
     /* D_PTE hit */
     if (D_PTE.valid[VA / D_pagesize] == 1) {
         DPTE_hits ++ ;
+        printf("Dpte hit in cycle %d\n",cycle_count);
         return -1;
     }
     
     /* D_PTE miss */
     DPTE_misses ++ ;
+    printf("Dpte miss in cycle %d\n",cycle_count);
     D_PTE.valid[VA / D_pagesize] = 1;
     
     /* search for D_MEM & update D_MEM*/
@@ -1382,6 +1388,7 @@ void D_CACHEupdate(int PA){
         if (D_CACHE.valid[i] == 1 && ( D_CACHE.tag[i] == MEM_index  ) ) {
             /* D_CACHE hit */
             DCache_hits ++ ;
+            printf("Dcache hit in cycle %d\n",cycle_count);
             //printf("hit in cycle_count : %d , tag = %d\n",cycle_count , D_CACHE.tag[i]);
             /* LRU order */
             //fully associativity
@@ -1408,6 +1415,7 @@ void D_CACHEupdate(int PA){
     
     /* D_CACHE miss */
     DCache_misses ++ ;
+    printf("Dcache miss in cycle %d\n",cycle_count);
     
     //fully associativity
     if (D_associativity == D_CACHE_block_num) {
