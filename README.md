@@ -1,5 +1,6 @@
 # MIPS_CMP
 Use C language to simulate MIPS processor, contains the design of cache, memory, page table, and TLB.
+
 For pipeline stage : IF -> ID -> EX -> DM ->WB.
 
 
